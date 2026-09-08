@@ -2,7 +2,7 @@
 
 [English](README.md) | [简体中文](README.zh-CN.md)
 
-[![Release](https://github.com/evan/tcomp/actions/workflows/release.yml/badge.svg)](https://github.com/evan/tcomp/actions/workflows/release.yml)
+[![Release](https://github.com/gmodx/tcmp/actions/workflows/release.yml/badge.svg)](https://github.com/gmodx/tcmp/actions/workflows/release.yml)
 [![Go 1.22+](https://img.shields.io/badge/Go-1.22%2B-00ADD8?logo=go&logoColor=white)](https://go.dev/)
 
 `tcomp` 是一个以鼠标操作为主、可直接编辑的终端文本对比工具。它并排显示两份文档，在输入时实时更新行级和词级差异，支持手动匹配行，也支持直接粘贴文本或打开 UTF-8 文件。
@@ -23,7 +23,7 @@
 
 ### 下载发布包
 
-从 [GitHub Releases](https://github.com/evan/tcomp/releases) 下载对应平台的压缩包，解压后将 `tcomp`（Windows 为 `tcomp.exe`）放入 `PATH`。
+从 [GitHub Releases](https://github.com/gmodx/tcmp/releases) 下载对应平台的压缩包，解压后将 `tcomp`（Windows 为 `tcomp.exe`）放入 `PATH`。
 
 | 操作系统 | 架构 | 压缩格式 |
 |---|---|---|
@@ -34,7 +34,7 @@
 以 Linux amd64 和 `0.2.0` 版本为例：
 
 ```sh
-curl -LO https://github.com/evan/tcomp/releases/download/v0.2.0/tcomp_0.2.0_linux_amd64.tar.gz
+curl -LO https://github.com/gmodx/tcmp/releases/download/v0.2.0/tcomp_0.2.0_linux_amd64.tar.gz
 tar -xzf tcomp_0.2.0_linux_amd64.tar.gz
 install -m 0755 tcomp "$HOME/.local/bin/tcomp"
 tcomp --version
@@ -49,7 +49,7 @@ sha256sum --check checksums.txt
 ### 使用 Go 安装
 
 ```sh
-go install github.com/evan/tcomp@latest
+go install github.com/gmodx/tcmp@latest
 ```
 
 需要 Go 1.22 或更高版本。
@@ -57,7 +57,7 @@ go install github.com/evan/tcomp@latest
 ### 从源码构建
 
 ```sh
-git clone https://github.com/evan/tcomp.git
+git clone https://github.com/gmodx/tcmp.git
 cd tcomp
 go build -o tcomp .
 ./tcomp --version

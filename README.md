@@ -2,7 +2,7 @@
 
 [English](README.md) | [简体中文](README.zh-CN.md)
 
-[![Release](https://github.com/evan/tcomp/actions/workflows/release.yml/badge.svg)](https://github.com/evan/tcomp/actions/workflows/release.yml)
+[![Release](https://github.com/gmodx/tcmp/actions/workflows/release.yml/badge.svg)](https://github.com/gmodx/tcmp/actions/workflows/release.yml)
 [![Go 1.22+](https://img.shields.io/badge/Go-1.22%2B-00ADD8?logo=go&logoColor=white)](https://go.dev/)
 
 `tcomp` is a mouse-first, editable text comparison TUI for the terminal. It displays two documents side by side, updates line and word differences while you type, supports manual line matching, and works with pasted text or UTF-8 files.
@@ -21,7 +21,7 @@
 
 ### Download a release
 
-Download the archive for your platform from [GitHub Releases](https://github.com/evan/tcomp/releases), extract it, and put `tcomp` (or `tcomp.exe`) on your `PATH`.
+Download the archive for your platform from [GitHub Releases](https://github.com/gmodx/tcmp/releases), extract it, and put `tcomp` (or `tcomp.exe`) on your `PATH`.
 
 | Operating system | Architectures | Archive |
 |---|---|---|
@@ -32,7 +32,7 @@ Download the archive for your platform from [GitHub Releases](https://github.com
 Example for Linux amd64, using version `0.2.0`:
 
 ```sh
-curl -LO https://github.com/evan/tcomp/releases/download/v0.2.0/tcomp_0.2.0_linux_amd64.tar.gz
+curl -LO https://github.com/gmodx/tcmp/releases/download/v0.2.0/tcomp_0.2.0_linux_amd64.tar.gz
 tar -xzf tcomp_0.2.0_linux_amd64.tar.gz
 install -m 0755 tcomp "$HOME/.local/bin/tcomp"
 tcomp --version
@@ -47,7 +47,7 @@ sha256sum --check checksums.txt
 ### Install with Go
 
 ```sh
-go install github.com/evan/tcomp@latest
+go install github.com/gmodx/tcmp@latest
 ```
 
 Go 1.22 or newer is required.
@@ -55,7 +55,7 @@ Go 1.22 or newer is required.
 ### Build from source
 
 ```sh
-git clone https://github.com/evan/tcomp.git
+git clone https://github.com/gmodx/tcmp.git
 cd tcomp
 go build -o tcomp .
 ./tcomp --version
