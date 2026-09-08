@@ -1,4 +1,4 @@
-module github.com/evan/tcomp
+module github.com/gmodx/tcmp
 
 go 1.22
 
