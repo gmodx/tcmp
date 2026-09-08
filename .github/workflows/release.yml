@@ -1,0 +1,169 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version to embed in artifacts (for example, 0.2.0)"
+        required: true
+        default: "0.2.0"
+
+permissions:
+  contents: read
+
+env:
+  CGO_ENABLED: "0"
+
+jobs:
+  verify:
+    name: Verify
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Test
+        run: go test ./...
+      - name: Race test
+        run: go test -race ./...
+      - name: Vet
+        run: go vet ./...
+      - name: Check formatting
+        run: test -z "$(gofmt -l .)"
+
+  build:
+    name: Build ${{ matrix.goos }}/${{ matrix.goarch }}
+    needs: verify
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - goos: linux
+            goarch: amd64
+            archive: tar.gz
+          - goos: linux
+            goarch: arm64
+            archive: tar.gz
+          - goos: linux
+            goarch: "386"
+            archive: tar.gz
+          - goos: darwin
+            goarch: amd64
+            archive: tar.gz
+          - goos: darwin
+            goarch: arm64
+            archive: tar.gz
+          - goos: windows
+            goarch: amd64
+            archive: zip
+          - goos: windows
+            goarch: arm64
+            archive: zip
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Resolve version
+        id: version
+        env:
+          INPUT_VERSION: ${{ inputs.version }}
+        shell: bash
+        run: |
+          if [[ "$GITHUB_REF_TYPE" == "tag" ]]; then
+            raw_version="$GITHUB_REF_NAME"
+          else
+            raw_version="$INPUT_VERSION"
+          fi
+          version="${raw_version#v}"
+          if [[ ! "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+([.-][0-9A-Za-z.-]+)?$ ]]; then
+            echo "Invalid version: $raw_version" >&2
+            exit 1
+          fi
+          echo "value=$version" >> "$GITHUB_OUTPUT"
+      - name: Build archive
+        env:
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+          VERSION: ${{ steps.version.outputs.value }}
+          ARCHIVE_FORMAT: ${{ matrix.archive }}
+        shell: bash
+        run: |
+          archive_name="tcomp_${VERSION}_${GOOS}_${GOARCH}"
+          stage="dist/${archive_name}"
+          binary="tcomp"
+          if [[ "$GOOS" == "windows" ]]; then
+            binary="tcomp.exe"
+          fi
+
+          mkdir -p "$stage"
+          go build -trimpath -ldflags "-s -w -X main.appVersion=$VERSION" -o "$stage/$binary" .
+          cp README.md README.zh-CN.md "$stage/"
+          if [[ -f LICENSE ]]; then
+            cp LICENSE "$stage/"
+          fi
+
+          if [[ "$ARCHIVE_FORMAT" == "zip" ]]; then
+            (cd "$stage" && zip -q -r "../${archive_name}.zip" .)
+          else
+            tar -C "$stage" -czf "dist/${archive_name}.tar.gz" .
+          fi
+      - name: Verify embedded version
+        if: matrix.goos == 'linux' && matrix.goarch == 'amd64'
+        env:
+          VERSION: ${{ steps.version.outputs.value }}
+        shell: bash
+        run: |
+          output="$("dist/tcomp_${VERSION}_linux_amd64/tcomp" --version)"
+          test "$output" = "tcomp $VERSION"
+      - name: Upload archive
+        uses: actions/upload-artifact@v4
+        with:
+          name: tcomp-${{ matrix.goos }}-${{ matrix.goarch }}
+          path: dist/tcomp_*.${{ matrix.archive }}
+          if-no-files-found: error
+          retention-days: 14
+
+  release:
+    name: Publish GitHub release
+    if: github.ref_type == 'tag'
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Download archives
+        uses: actions/download-artifact@v4
+        with:
+          pattern: tcomp-*
+          path: dist
+          merge-multiple: true
+      - name: Create checksums
+        working-directory: dist
+        run: sha256sum tcomp_* > checksums.txt
+      - name: Publish release assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
+            gh release upload "$GITHUB_REF_NAME" dist/* --clobber
+            exit 0
+          fi
+
+          options=(--title "tcomp $GITHUB_REF_NAME" --generate-notes)
+          if [[ "$GITHUB_REF_NAME" == *-* ]]; then
+            options+=(--prerelease)
+          fi
+          gh release create "$GITHUB_REF_NAME" dist/* "${options[@]}"

@@ -1,0 +1,9 @@
+# Local builds
+/tcomp
+/tcomp.exe
+/tcompared
+/dist/
+
+# Editor and OS files
+.DS_Store
+*.swp
