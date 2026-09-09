@@ -7,6 +7,8 @@
 
 `tcomp` is a mouse-first, editable text comparison TUI for the terminal. It displays two documents side by side, updates line and word differences while you type, supports manual line matching, and works with pasted text or UTF-8 files.
 
+![tcomp comparing two documents side by side in a terminal](assets/screenshot.png)
+
 ## Highlights
 
 - Side-by-side editing with independent line numbers and synchronized vertical scrolling.
