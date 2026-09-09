@@ -21,7 +21,7 @@ var (
 	textSelectedStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("231")).Background(lipgloss.Color("24"))
 	menuBarStyle      = lipgloss.NewStyle().Foreground(lipgloss.Color("250"))
 	menuBarTitleStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("255")).Bold(true)
-	menuBarActive     = lipgloss.NewStyle().Foreground(lipgloss.Color("220")).Bold(true).Underline(true)
+	menuBarActive     = lipgloss.NewStyle().Foreground(lipgloss.Color("220")).Bold(true)
 	barSeparatorStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("240"))
 	commandBarStyle   = lipgloss.NewStyle().Foreground(lipgloss.Color("240"))
 	commandStyle      = lipgloss.NewStyle().Foreground(lipgloss.Color("250"))
@@ -46,16 +46,18 @@ func (m appModel) View() string {
 	output.WriteString(m.renderPaneHeader(leftSide) + m.renderVerticalDivider() + m.renderPaneHeader(rightSide) + "\n")
 	output.WriteString(strings.Repeat("─", m.paneWidth(leftSide)) + m.renderHorizontalDivider() + strings.Repeat("─", m.paneWidth(rightSide)) + "\n")
 
+	visibleRows := m.displayRows()
 	for visible := 0; visible < m.bodyRows(); visible++ {
-		rowIndex := m.scroll + visible
-		if rowIndex >= len(m.workspace.rows) {
+		visualIndex := m.scroll + visible
+		if visualIndex >= len(visibleRows) {
 			output.WriteString(strings.Repeat(" ", m.paneWidth(leftSide)) + m.renderVerticalDivider() + strings.Repeat(" ", m.paneWidth(rightSide)) + "\n")
 			continue
 		}
-		row := m.workspace.rows[rowIndex]
-		output.WriteString(m.renderPaneRow(row, rowIndex, leftSide))
+		displayRow := visibleRows[visualIndex]
+		row := m.workspace.rows[displayRow.rowIndex]
+		output.WriteString(m.renderPaneRowPart(row, displayRow.rowIndex, displayRow.part, leftSide))
 		output.WriteString(m.renderVerticalDivider())
-		output.WriteString(m.renderPaneRow(row, rowIndex, rightSide))
+		output.WriteString(m.renderPaneRowPart(row, displayRow.rowIndex, displayRow.part, rightSide))
 		output.WriteByte('\n')
 	}
 
@@ -215,6 +217,14 @@ var topMenuItems = []struct {
 	{helpMenu, "Help"},
 }
 
+func renderMenuLabel(style lipgloss.Style, label string) string {
+	runes := []rune(label)
+	if len(runes) == 0 {
+		return style.Render("  ")
+	}
+	return style.Render(" ") + style.Copy().Underline(true).Render(string(runes[0])) + style.Render(string(runes[1:])+" ")
+}
+
 func (m appModel) buildHeader() headerLayout {
 	var left strings.Builder
 	title := menuBarTitleStyle.Render(" tcomp " + appVersion + " ")
@@ -230,7 +240,7 @@ func (m appModel) buildHeader() headerLayout {
 		if m.mode == menuMode && m.menu.kind == item.kind {
 			style = menuBarActive
 		}
-		label := style.Render(" " + item.label + " ")
+		label := renderMenuLabel(style, item.label)
 		width := ansi.StringWidth(label)
 		menus = append(menus, topMenuHit{kind: item.kind, x: x, width: width})
 		left.WriteString(label)
@@ -301,40 +311,47 @@ func (m appModel) renderPaneHeader(which side) string {
 }
 
 func (m appModel) renderPaneRow(row Row, rowIndex int, which side) string {
+	return m.renderPaneRowPart(row, rowIndex, 0, which)
+}
+
+func (m appModel) renderPaneRowPart(row Row, rowIndex, part int, which side) string {
 	lineNumber := row.LeftNum
 	if which == rightSide {
 		lineNumber = row.RightNum
 	}
 
-	current := rowIndex == m.current && which == m.focus
-	picked := lineNumber > 0 && m.workspace.isSelected(which, lineNumber-1)
-	cursorMarker := " "
-	switch {
-	case current:
-		cursorMarker = "▶"
-	case picked:
-		cursorMarker = "●"
-	}
-	digits := m.gutterWidth() - 4
-	number := strings.Repeat(" ", digits)
-	if lineNumber > 0 {
-		number = fmt.Sprintf("%*d", digits, lineNumber)
-	}
-
-	cursorIndicator := mutedStyle.Render(cursorMarker)
-	lineNumberStyle := mutedStyle
-	switch {
-	case current:
-		cursorIndicator = focusStyle.Render(cursorMarker)
-		lineNumberStyle = focusStyle
-	case picked:
-		cursorIndicator = manualStyle.Render(cursorMarker)
-		lineNumberStyle = manualStyle
-	}
-	gutter := cursorIndicator + renderRowStatus(row) + " " + lineNumberStyle.Render(number) + " "
-
 	paneWidth := m.paneWidth(which)
-	available := max(1, paneWidth-m.gutterWidth())
+	available := m.contentWidth(which)
+	gutter := strings.Repeat(" ", m.gutterWidth())
+	if part == 0 {
+		current := rowIndex == m.current && which == m.focus
+		picked := lineNumber > 0 && m.workspace.isSelected(which, lineNumber-1)
+		cursorMarker := " "
+		switch {
+		case current:
+			cursorMarker = "▶"
+		case picked:
+			cursorMarker = "●"
+		}
+		digits := m.gutterWidth() - 4
+		number := strings.Repeat(" ", digits)
+		if lineNumber > 0 {
+			number = fmt.Sprintf("%*d", digits, lineNumber)
+		}
+
+		cursorIndicator := mutedStyle.Render(cursorMarker)
+		lineNumberStyle := mutedStyle
+		switch {
+		case current:
+			cursorIndicator = focusStyle.Render(cursorMarker)
+			lineNumberStyle = focusStyle
+		case picked:
+			cursorIndicator = manualStyle.Render(cursorMarker)
+			lineNumberStyle = manualStyle
+		}
+		gutter = cursorIndicator + renderRowStatus(row) + " " + lineNumberStyle.Render(number) + " "
+	}
+
 	cursor := -1
 	if m.caretActive && m.cursorVisible && !m.textSelection.active && m.editor.side == which && lineNumber == m.editor.row+1 {
 		cursor = m.editor.col
@@ -346,10 +363,22 @@ func (m appModel) renderPaneRow(row Row, rowIndex int, which side) string {
 	styled := renderComparedText(row, which, cursor, selectionStart, selectionEnd)
 	lineWidth := ansi.StringWidth(displayText(rowText(row, which)))
 	if lineNumber == 0 {
-		styled = changedLineStyle.Render("∅")
-		lineWidth = 1
+		if part == 0 {
+			styled = changedLineStyle.Render("∅")
+			lineWidth = 1
+		} else {
+			styled = ""
+			lineWidth = 0
+		}
 	}
-	content := m.renderScrollableText(styled, which, lineWidth, available)
+
+	content := ""
+	if m.wrap {
+		start := part * available
+		content = fitANSI(ansi.Cut(styled, start, start+available), available)
+	} else {
+		content = m.renderScrollableText(styled, which, lineWidth, available)
+	}
 	return fitANSI(gutter+content, paneWidth)
 }
 
@@ -466,11 +495,15 @@ func (m appModel) contextMenuItems() []string {
 	case fileMenu:
 		return []string{"Replace focused document", "Quit tcomp"}
 	case editMenu:
+		wrapLabel := "  Wrap Line"
+		if m.wrap {
+			wrapLabel = "✓ Wrap Line"
+		}
 		pasteLabel := "Paste from tcomp clipboard"
 		if m.clipboard == "" {
 			pasteLabel = "Paste (tcomp clipboard is empty)"
 		}
-		return []string{"Select all in focused pane", "Copy selection", "Cut selection", pasteLabel}
+		return []string{wrapLabel, "Select all in focused pane", "Copy selection", "Cut selection", pasteLabel}
 	case compareMenu:
 		return []string{"Match picked lines", "Reset matches and selections", "Equal pane widths"}
 	case helpMenu:
@@ -585,13 +618,13 @@ func (m appModel) renderHelpLines() []string {
 		"  Arrows: move   Page Up/Down: one screen",
 		"  Home/End: line   Ctrl+Home/End: document   Tab: pane",
 		"Clipboard",
-		"  Ctrl+A: select pane   Ctrl+C: copy   Ctrl+X: cut",
-		"  Ctrl+V: internal paste   Shift+Insert: external paste",
+		"  Ctrl+A: select pane   Ctrl+X: cut   Ctrl+V: internal paste",
+		"  Copy: Edit menu or right-click   Shift+Insert: external paste",
 		"Comparison",
 		"  Right-click: line match   Divider: drag   Shift+wheel: horizontal",
 		"Keyboard backup",
 		"  Ctrl+P: replace   Alt+M: match   Ctrl+R: reset",
-		"  Alt+H: help   Esc: close/clear   Ctrl+Q: quit",
+		"  Alt+H: help   Esc: close/clear   Ctrl+C / Ctrl+Q: quit",
 		"",
 	}
 	bodyRows := max(1, height-2)

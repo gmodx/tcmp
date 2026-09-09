@@ -51,6 +51,11 @@ type textPoint struct {
 	col int
 }
 
+type displayRow struct {
+	rowIndex int
+	part     int
+}
+
 type textSelection struct {
 	side   side
 	anchor textPoint
@@ -96,6 +101,7 @@ type appModel struct {
 	current           int
 	scroll            int
 	horizontal        [2]int
+	wrap              bool
 	width             int
 	height            int
 	mode              appMode
@@ -123,6 +129,7 @@ func newAppModel(left, right []string) appModel {
 		caretActive:   true,
 		cursorVisible: true,
 		clipboardOut:  os.Stderr,
+		wrap:          true,
 		splitRatio:    0.5,
 		status:        "Ready. Click to edit, drag to select, or use the menu and command bars.",
 	}
@@ -159,12 +166,8 @@ func (m appModel) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 		m.cursorVisible = true
 		m.dividerHover = false
 		m.dividerDragging = false
-		if message.Type == tea.KeyCtrlQ {
+		if message.Type == tea.KeyCtrlQ || message.Type == tea.KeyCtrlC {
 			return m, tea.Quit
-		}
-		if message.Type == tea.KeyCtrlC && m.textSelection.active && (m.mode == browseMode || m.mode == menuMode) {
-			m.mode = browseMode
-			return m.copyTextSelection()
 		}
 		switch m.mode {
 		case pasteMode:
@@ -552,7 +555,12 @@ func (m appModel) handleMouse(mouse tea.MouseMsg) (tea.Model, tea.Cmd) {
 	if !ok || mouse.Y < contentTop || mouse.Y >= contentTop+m.bodyRows() {
 		return m, nil
 	}
-	rowIndex := m.scroll + mouse.Y - contentTop
+	visualIndex := m.scroll + mouse.Y - contentTop
+	visibleRows := m.displayRows()
+	if visualIndex < 0 || visualIndex >= len(visibleRows) {
+		return m, nil
+	}
+	rowIndex := visibleRows[visualIndex].rowIndex
 	m.focus, m.current = clickedSide, rowIndex
 	switch mouse.Button {
 	case tea.MouseButtonLeft:
@@ -635,15 +643,57 @@ func (m *appModel) extendTextDrag(x, y int) {
 	m.clampViewport()
 }
 
+func (m appModel) displayRows() []displayRow {
+	rows := make([]displayRow, 0, len(m.workspace.rows))
+	for rowIndex, row := range m.workspace.rows {
+		height := 1
+		if m.wrap {
+			height = max(m.wrappedRowHeight(row, leftSide), m.wrappedRowHeight(row, rightSide))
+		}
+		for part := 0; part < height; part++ {
+			rows = append(rows, displayRow{rowIndex: rowIndex, part: part})
+		}
+	}
+	return rows
+}
+
+func (m appModel) wrappedRowHeight(row Row, which side) int {
+	lineNumber := row.LeftNum
+	if which == rightSide {
+		lineNumber = row.RightNum
+	}
+	if lineNumber == 0 {
+		return 1
+	}
+	width := ansi.StringWidth(displayText(rowText(row, which)))
+	return max(1, (width+m.contentWidth(which)-1)/m.contentWidth(which))
+}
+
+func (m appModel) contentWidth(which side) int {
+	return max(1, m.paneWidth(which)-m.gutterWidth())
+}
+
+func (m appModel) visualRowIndex(rowIndex, part int) int {
+	for index, row := range m.displayRows() {
+		if row.rowIndex == rowIndex && row.part == part {
+			return index
+		}
+	}
+	return 0
+}
+
 func (m appModel) textPointAt(x, y int) (textPoint, bool) {
 	which, ok := m.sideAtX(x)
 	if !ok || y < contentTop || y >= contentTop+m.bodyRows() {
 		return textPoint{}, false
 	}
-	rowIndex := m.scroll + y - contentTop
-	if rowIndex < 0 || rowIndex >= len(m.workspace.rows) {
+	visualIndex := m.scroll + y - contentTop
+	visibleRows := m.displayRows()
+	if visualIndex < 0 || visualIndex >= len(visibleRows) {
 		return textPoint{}, false
 	}
+	displayRow := visibleRows[visualIndex]
+	rowIndex := displayRow.rowIndex
 	row := m.workspace.rows[rowIndex]
 	text := row.Left
 	lineNumber := row.LeftNum
@@ -660,6 +710,9 @@ func (m appModel) textPointAt(x, y int) (textPoint, bool) {
 		contentColumn--
 	}
 	cell := m.horizontal[which] + contentColumn
+	if m.wrap {
+		cell = displayRow.part*m.contentWidth(which) + contentColumn
+	}
 	return textPoint{row: rowIndex, col: runeIndexAtDisplayColumn(text, cell)}, true
 }
 
@@ -1150,15 +1203,28 @@ func (m appModel) activateMenuItem() (tea.Model, tea.Cmd) {
 			return m, tea.Quit
 		}
 	case editMenu:
-		m.mode = browseMode
 		switch m.menuItem {
 		case 0:
-			m.selectAllText()
+			m.wrap = !m.wrap
+			m.horizontal = [2]int{}
+			m.clampViewport()
+			if m.wrap {
+				m.status = "Long lines wrap within each pane."
+			} else {
+				m.status = "Long lines use horizontal scrolling."
+			}
+			return m, nil
 		case 1:
-			return m.copyTextSelection()
+			m.mode = browseMode
+			m.selectAllText()
 		case 2:
-			return m.cutTextSelection()
+			m.mode = browseMode
+			return m.copyTextSelection()
 		case 3:
+			m.mode = browseMode
+			return m.cutTextSelection()
+		case 4:
+			m.mode = browseMode
 			m.pasteInternalClipboard()
 		}
 	case compareMenu:
@@ -1200,12 +1266,11 @@ func (m *appModel) syncCaretToCurrent() {
 
 func (m *appModel) scrollBy(delta int) {
 	m.scroll = max(0, min(m.maxScroll(), m.scroll+delta))
-	if m.current < m.scroll {
-		m.current = m.scroll
+	rows := m.displayRows()
+	if len(rows) == 0 {
+		return
 	}
-	if m.current >= m.scroll+m.bodyRows() {
-		m.current = min(len(m.workspace.rows)-1, m.scroll+m.bodyRows()-1)
-	}
+	m.current = rows[min(m.scroll, len(rows)-1)].rowIndex
 }
 
 func (m *appModel) scrollHorizontal(which side, delta int) {
@@ -1239,12 +1304,21 @@ func (m *appModel) clampViewport() {
 	for _, which := range []side{leftSide, rightSide} {
 		m.horizontal[which] = max(0, min(m.maxHorizontal(which), m.horizontal[which]))
 	}
-	if m.current < m.scroll {
-		m.scroll = m.current
+
+	currentStart := m.visualRowIndex(m.current, 0)
+	currentEnd := currentStart
+	for index, row := range m.displayRows() {
+		if row.rowIndex == m.current {
+			currentEnd = index
+		}
 	}
-	if m.current >= m.scroll+m.bodyRows() {
-		m.scroll = m.current - m.bodyRows() + 1
+	if currentStart < m.scroll {
+		m.scroll = currentStart
 	}
+	if currentEnd >= m.scroll+m.bodyRows() {
+		m.scroll = currentEnd - m.bodyRows() + 1
+	}
+	m.scroll = max(0, min(m.maxScroll(), m.scroll))
 }
 
 func (m appModel) bodyRows() int {
@@ -1252,7 +1326,7 @@ func (m appModel) bodyRows() int {
 }
 
 func (m appModel) maxScroll() int {
-	return max(0, len(m.workspace.rows)-m.bodyRows())
+	return max(0, len(m.displayRows())-m.bodyRows())
 }
 
 func (m appModel) dividerX() int {
@@ -1354,6 +1428,9 @@ func (m appModel) visibleTextWidth(which side, offset, lineWidth int) int {
 }
 
 func (m appModel) maxHorizontal(which side) int {
+	if m.wrap {
+		return 0
+	}
 	longest := m.longestDisplayWidth(which)
 	available := max(1, m.paneWidth(which)-m.gutterWidth())
 	if longest <= available {

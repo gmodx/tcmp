@@ -13,7 +13,7 @@
 - Green identical lines, red changed/inserted/deleted lines, and dark-red changed words.
 - Mouse text selection with Copy, Cut, Paste, and an OSC 52 terminal clipboard bridge.
 - Right-click manual line matching for cases where automatic alignment needs guidance.
-- A draggable center divider, independent horizontal scrolling, visible overflow indicators, a blinking caret, menus, and a command bar.
+- A draggable center divider, default-on long-line wrapping (toggle it from **Edit**), optional independent horizontal scrolling, a blinking caret, menus, and a command bar.
 - Keyboard access for every important action without relying on function keys.
 - Versioned release archives for Linux, macOS, and Windows.
 
@@ -80,7 +80,7 @@ On exit, both panes are saved to `tcomp/last-session.json` under the operating s
 
 ## Interface
 
-The first row contains the `File`, `Edit`, `Compare`, and `Help` menus. The color legend stays at the upper-right. The bottom row provides clickable `Help`, `Reset`, `Replace`, `Match`, `Copy`, and `Quit` commands, with status messages directly above it.
+The first row contains the `File`, `Edit`, `Compare`, and `Help` menus. **Edit → ✓ Wrap Line** is enabled by default: paired rows expand to keep both panes aligned. Turn it off to keep each row to one screen line and use horizontal scrolling. The color legend stays at the upper-right. The bottom row provides clickable `Help`, `Reset`, `Replace`, `Match`, `Copy`, and `Quit` commands, with status messages directly above it.
 
 | Indicator | Meaning |
 |---|---|
@@ -106,7 +106,7 @@ Mouse interaction is the primary workflow:
 - Right-click outside a text selection to pick a source line and open the manual-match menu. Pick a line on each side, then choose **Match selected line pair**.
 - Drag the center divider to resize the panes. Each pane keeps a minimum usable width.
 - Use the normal wheel to scroll both panes vertically.
-- Use a horizontal wheel to scroll only the pane under the pointer. If the terminal has no horizontal wheel events, hold `Shift` while using the normal wheel. Long lines stay on one aligned row; `‹` and `›` show hidden content, and the status row reports each pane's visible column range.
+- With **Edit → Wrap Line** disabled, use a horizontal wheel to scroll only the pane under the pointer. If the terminal has no horizontal wheel events, hold `Shift` while using the normal wheel. `‹` and `›` show hidden content, and the status row reports each pane's visible column range.
 - Click the top menus or bottom command bar for common actions.
 
 When terminal mouse tracking is active, hold `Shift` while dragging if you want the terminal emulator's native selection instead of `tcomp`'s text selection.
@@ -115,7 +115,7 @@ When terminal mouse tracking is active, hold `Shift` while dragging if you want 
 
 Editing is always active. Printable characters insert at the caret; Enter creates a line; Backspace and Delete remove text. Arrow keys move by one character or line, Home and End move to the current line's edges, Page Up and Page Down move by one viewport, and Ctrl+Home and Ctrl+End move to the document's beginning or end. Typing or pasting replaces an active selection. On a long line, moving or editing automatically scrolls the focused pane to keep the caret visible.
 
-`Ctrl+C` and `Ctrl+X` copy to `tcomp`'s internal clipboard and emit OSC 52 for terminals that permit system-clipboard writes. `Ctrl+V` reads the internal clipboard. Terminal programs cannot portably read the system clipboard, so paste external text with the terminal's `Shift+Insert`, `Ctrl+Shift+V`, or paste-menu command.
+`Ctrl+C` exits `tcomp`. Use **Edit → Copy selection** or the selected-text context menu to copy to `tcomp`'s internal clipboard and emit OSC 52 for terminals that permit system-clipboard writes. `Ctrl+X` cuts and copies, while `Ctrl+V` reads the internal clipboard. Terminal programs cannot portably read the system clipboard, so paste external text with the terminal's `Shift+Insert`, `Ctrl+Shift+V`, or paste-menu command.
 
 Press `Ctrl+P` or click **Replace** to replace one complete document. Paste or type into the preview, press `Ctrl+S` to apply it, or press Esc to cancel.
 
@@ -138,7 +138,8 @@ Press `Ctrl+P` or click **Replace** to replace one complete document. Paste or t
 | Ctrl+Home / Ctrl+End | Move to the beginning / end of the document |
 | Tab / Shift+Tab | Switch focused pane |
 | Ctrl+A | Select the focused document |
-| Ctrl+C / Ctrl+X / Ctrl+V | Copy / Cut / internal Paste |
+| Ctrl+X / Ctrl+V | Cut / internal Paste |
+| Copy selection | Edit menu or selected-text context menu |
 | Shift+Insert or Ctrl+Shift+V | Paste external text at the caret or over selection |
 | Ctrl+P | Open complete-document replacement |
 | Ctrl+S | Apply complete-document replacement |
@@ -147,7 +148,7 @@ Press `Ctrl+P` or click **Replace** to replace one complete document. Paste or t
 | Alt+F / Alt+E / Alt+C | Open File / Edit / Compare menu |
 | Alt+H | Open Help |
 | Esc | Close overlay or clear selections |
-| Ctrl+Q | Quit |
+| Ctrl+C / Ctrl+Q | Quit |
 
 ## Comparison model
 

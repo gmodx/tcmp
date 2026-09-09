@@ -3,6 +3,7 @@
 /tcomp.exe
 /tcompared
 /dist/
+tcmp
 
 # Editor and OS files
 .DS_Store

@@ -2,7 +2,6 @@ package main
 
 import (
 	"bytes"
-	"encoding/base64"
 	"errors"
 	"flag"
 	"os"
@@ -234,6 +233,49 @@ func TestLegendUsesRenderedColorSwatches(t *testing.T) {
 	}
 }
 
+func TestTopMenuAcceleratorsAreIndividuallyUnderlined(t *testing.T) {
+	previous := lipgloss.ColorProfile()
+	lipgloss.SetColorProfile(termenv.ANSI256)
+	t.Cleanup(func() { lipgloss.SetColorProfile(previous) })
+
+	m := sizedModel([]string{"same"}, []string{"same"})
+	header := m.renderHeader()
+	for _, accelerator := range []string{"F", "E", "C", "H"} {
+		if !strings.Contains(header, ";4m"+accelerator) {
+			t.Fatalf("header does not underline %q as a menu accelerator: %q", accelerator, header)
+		}
+	}
+
+	m.openTopMenu(fileMenu)
+	activeHeader := m.renderHeader()
+	if !strings.Contains(activeHeader, ";4mF") {
+		t.Fatalf("active File menu does not retain its underlined accelerator: %q", activeHeader)
+	}
+	if strings.Contains(activeHeader, ";4mile") {
+		t.Fatalf("active File menu underlines more than its accelerator: %q", activeHeader)
+	}
+}
+
+func TestTopMenuAcceleratorsKeepTheirAltShortcuts(t *testing.T) {
+	for _, testCase := range []struct {
+		key      rune
+		mode     appMode
+		menuKind contextMenuKind
+	}{
+		{'f', menuMode, fileMenu},
+		{'e', menuMode, editMenu},
+		{'c', menuMode, compareMenu},
+		{'h', helpMode, helpMenu},
+	} {
+		m := sizedModel([]string{"same"}, []string{"same"})
+		updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{testCase.key}, Alt: true})
+		m = updated.(appModel)
+		if m.mode != testCase.mode || (m.mode == menuMode && m.menu.kind != testCase.menuKind) {
+			t.Fatalf("Alt+%c opened mode %v menu %v, want mode %v menu %v", testCase.key, m.mode, m.menu.kind, testCase.mode, testCase.menuKind)
+		}
+	}
+}
+
 func TestStatusAndCommandBarUseTheFinalTwoRows(t *testing.T) {
 	m := sizedModel([]string{"same"}, []string{"same"})
 	m.status = "Ready."
@@ -457,32 +499,25 @@ func TestRightClickSelectedTextOpensClipboardMenu(t *testing.T) {
 	}
 }
 
-func TestCtrlCCopiesSelectionToInternalAndTerminalClipboards(t *testing.T) {
+func TestCtrlCQuitsEvenWithTextSelection(t *testing.T) {
 	m := sizedModel([]string{"copy me"}, []string{"other"})
 	m.textSelection = textSelection{
 		side: leftSide, anchor: textPoint{row: 0, col: 0}, head: textPoint{row: 0, col: 4}, active: true,
 	}
-	var terminal bytes.Buffer
-	m.clipboardOut = &terminal
 
 	updated, command := m.Update(tea.KeyMsg{Type: tea.KeyCtrlC})
 	m = updated.(appModel)
-	if m.clipboard != "copy" {
-		t.Fatalf("internal clipboard = %q, want copy", m.clipboard)
-	}
 	if command == nil {
-		t.Fatal("copy did not return a terminal clipboard command")
+		t.Fatal("Ctrl+C did not request quit")
 	}
-	message := command()
-	if result, ok := message.(clipboardWriteMsg); !ok || result.err != nil {
-		t.Fatalf("clipboard command result = %#v", message)
+	if _, ok := command().(tea.QuitMsg); !ok {
+		t.Fatalf("Ctrl+C command = %T, want tea.QuitMsg", command())
 	}
-	encoded := base64.StdEncoding.EncodeToString([]byte("copy"))
-	if !strings.Contains(terminal.String(), "\x1b]52;c;"+encoded+"\x07") {
-		t.Fatalf("terminal clipboard output = %q", terminal.String())
+	if got := m.workspace.lines(leftSide)[0]; got != "copy me" {
+		t.Fatalf("Ctrl+C changed document to %q", got)
 	}
-	if m.status != "Copied 4 characters." {
-		t.Fatalf("copy status = %q", m.status)
+	if m.clipboard != "" {
+		t.Fatalf("Ctrl+C copied selected text %q instead of quitting", m.clipboard)
 	}
 }
 
@@ -856,6 +891,7 @@ func TestHelpCloseButtonRemainsVisibleAtMinimumHeight(t *testing.T) {
 func TestLongLinesShowOverflowIndicatorsWithoutAffectingShortPane(t *testing.T) {
 	longLine := strings.Repeat("0123456789", 8)
 	m := sizedModel([]string{longLine}, []string{"short"})
+	m.wrap = false
 
 	left := ansi.Strip(m.renderPaneRow(m.workspace.rows[0], 0, leftSide))
 	right := ansi.Strip(m.renderPaneRow(m.workspace.rows[0], 0, rightSide))
@@ -873,6 +909,7 @@ func TestLongLinesShowOverflowIndicatorsWithoutAffectingShortPane(t *testing.T) 
 func TestHorizontalWheelScrollsOnlyThePaneUnderThePointer(t *testing.T) {
 	line := strings.Repeat("abcdefghij", 8)
 	m := sizedModel([]string{line}, []string{line})
+	m.wrap = false
 	leftBefore := ansi.Strip(m.renderPaneRow(m.workspace.rows[0], 0, leftSide))
 	rightBefore := ansi.Strip(m.renderPaneRow(m.workspace.rows[0], 0, rightSide))
 
@@ -904,6 +941,7 @@ func TestHorizontalWheelScrollsOnlyThePaneUnderThePointer(t *testing.T) {
 func TestShiftWheelProvidesHorizontalScrollingFallback(t *testing.T) {
 	line := strings.Repeat("abcdefghij", 8)
 	m := sizedModel([]string{line}, []string{line})
+	m.wrap = false
 	before := ansi.Strip(m.renderPaneRow(m.workspace.rows[0], 0, leftSide))
 
 	updated, _ := m.Update(tea.MouseMsg{
@@ -933,6 +971,7 @@ func TestPastePreviewKeepsCaretVisibleOnLongLines(t *testing.T) {
 func TestCaretAutoScrollsToLongLineEndWithoutMovingOtherPane(t *testing.T) {
 	line := strings.Repeat("abcdefghij", 8)
 	m := sizedModel([]string{line}, []string{line})
+	m.wrap = false
 	rightBefore := ansi.Strip(m.renderPaneRow(m.workspace.rows[0], 0, rightSide))
 	m.editor = editorState{side: leftSide, row: 0, col: len([]rune(line))}
 	m.focus = leftSide
@@ -1017,5 +1056,42 @@ func TestPageAndBoundaryKeysNavigateTheReplacementPreview(t *testing.T) {
 	m = updated.(appModel)
 	if m.paste.cursor != end {
 		t.Fatalf("Ctrl+End preview cursor = %d, want %d", m.paste.cursor, end)
+	}
+}
+
+func TestWrapLongLinesIsEnabledByDefaultAndToggleableFromEditMenu(t *testing.T) {
+	line := strings.Repeat("abcdefghij", 8)
+	m := sizedModel([]string{line}, []string{"short"})
+	m.caretActive = false
+
+	if !m.wrap {
+		t.Fatal("long-line wrapping is not enabled by default")
+	}
+	if got := len(m.displayRows()); got != 2 {
+		t.Fatalf("wrapped display rows = %d, want 2", got)
+	}
+	view := ansi.Strip(m.View())
+	body := strings.Split(view, "\n")[contentTop : contentTop+2]
+	if !strings.Contains(body[0], line[:m.contentWidth(leftSide)]) || !strings.Contains(body[1], line[m.contentWidth(leftSide):]) {
+		t.Fatalf("long line was not rendered across visual rows:\n%s", strings.Join(body, "\n"))
+	}
+	if strings.Contains(body[0], "›") || strings.Contains(body[1], "›") {
+		t.Fatalf("wrapped display unexpectedly shows horizontal overflow: %q", body)
+	}
+
+	m.openTopMenu(editMenu)
+	if item := m.contextMenuItems()[0]; item != "✓ Wrap Line" {
+		t.Fatalf("default Edit-menu item = %q, want checked wrap option", item)
+	}
+	updated, _ := m.activateMenuItem()
+	m = updated.(appModel)
+	if m.wrap {
+		t.Fatal("Edit-menu wrap option did not disable wrapping")
+	}
+	if item := m.contextMenuItems()[0]; item != "  Wrap Line" {
+		t.Fatalf("disabled Edit-menu item = %q, want unchecked wrap option", item)
+	}
+	if row := ansi.Strip(m.renderPaneRow(m.workspace.rows[0], 0, leftSide)); !strings.Contains(row, "›") {
+		t.Fatalf("disabled wrapping did not restore horizontal overflow: %q", row)
 	}
 }
